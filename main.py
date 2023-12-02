@@ -1,69 +1,131 @@
 from fastapi import FastAPI, Query, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-#   class that contains types of requested information in the first method (/generate-dish-propositions/)
-class DishRequest(BaseModel):
-    num_propositions: int = Query(..., title="Number of Dish Propositions", description="Enter the number of dish propositions you want.")
-    ingredients: str = Query(..., title="Ingredients", description="Comma-separated list of ingredients.")
+# global variables
+generated_propositions = [...]
+vegan_diet: bool
+vegetarian_diet: bool
+no_lactose: bool
+Diabetes: bool
+Calories: int
+Meal_type: str
+Preferences: str
 
-#   class that takes from the user index of prevoiously generated dish
-class DishInstructionsRequest(BaseModel):
-    selected_dish_index: int = Query(..., title="Selected Dish Index", description="Index of the selected dish from the generated propositions.")
+
+#  class that contains types of requested information in the first method (/generate-dish-propositions/)
+class DishRequest(BaseModel):
+    vegan_diet: bool = Query(...)
+    vegetarian_diet: bool = Query(...)
+    no_lactose: bool = Query(...)
+    Diabetes: bool = Query(...)
+    Calories: int = Query(...)
+    Meal_type: str = Query(...)
+    Preferences: str = Query(...)
+
 
 # API key to connect to gpt-3.5-turbo
-openai = OpenAI(api_key="PUT_YOUR_API_KEY_HERE")
+openai = OpenAI(api_key="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")
 
-
-# variable to containt generated propositions
-generated_propositions = []
-
-# variable to containt used ingredients
-ingredients = ""
 
 # method that generates dish propositions and stores them in global variable generated_propositions
-# ingredients are stored in global variable named ingredients
 @app.post("/generate-dish-propositions/")
 async def generate_dish_propositions(request: DishRequest):
 
-    global ingredients
-    ingredients = request.ingredients
+    user_message = (
+        f"Give the response in Polish, Give me 5 dish propositions (only the names of the dishes and nothing more) with the following preferences:"
+        f" Vegan: {request.vegan_diet}, Vegetarian: {request.vegetarian_diet},"
+        f" No Lactose: {request.no_lactose}, Diabetes: {request.Diabetes},"
+        f" Calories: {request.Calories}, Meal Type: {request.Meal_type},"
+        f" Preferences: {request.Preferences}."
+    )
+
     messages = [
         {"role": "system", "content": "You are someone who gives dishes propositions."},
-        {"role": "user", "content": f"Give me {request.num_propositions} dish propositions - only their names, that contain: {request.ingredients}."},
+        {"role": "user", "content": user_message},
     ]
+
 
     response = openai.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=messages,
-        temperature=0.7,
+        temperature=0.3,
     )
 
     global generated_propositions
+    generated_propositions = [...]
+    global vegan_diet
+    global vegetarian_diet
+    global no_lactose
+    global Diabetes
+    global Calories
+    global Meal_type
+    global Preferences
+    vegan_diet = request.vegan_diet
+    vegetarian_diet = request.vegetarian_diet
+    no_lactose = request.no_lactose
+    Diabetes = request.Diabetes
+    Calories = request.Calories
+    Meal_type = request.Meal_type
+    Preferences = request.Preferences
     generated_propositions = [{"name": name.strip()} for name in response.choices[0].message.content.split("\n")]
+    return {"ok": "ok"}
+
+
+#method that sends generated dishes back to the website
+@app.get("/generate-dish-propositions/sending-with-get-method")
+async def get_generated_dish_propositions():
+    global generated_propositions
+    if not generated_propositions:
+        raise HTTPException(status_code=404, detail="No generated dish propositions available.")
     return {"generated_propositions": generated_propositions}
 
-# in this method we ask user to give us index of prevoiusly generated meal, and we give him ingredients and instruciotn how to do said meal
-@app.post("/generate-dish-instructions/")
-async def generate_dish_instructions(request: DishInstructionsRequest):
-    selected_dish_index = request.selected_dish_index
 
-    if not (0 <= selected_dish_index < len(generated_propositions)):
+
+# method that gives ingredients and instructions to meal selected from prevoiusly generated meals
+@app.get("/generate-dish-instructions/{index}")
+async def generate_dish_instructions(index: int):
+    global generated_propositions
+    index = index
+
+    if not (0 <= index <= len(generated_propositions)):
         raise HTTPException(status_code=400, detail="Invalid selected dish index.")
 
-    selected_dish = generated_propositions[selected_dish_index-1]["name"]
+    selected_dish = generated_propositions[index-1]["name"]
+
+    user_message_2 = (
+        f"Give the response in Polish, Give me list of ingredients and instructions (separate ingredients and instruction with '***') how to prepare {selected_dish} with the following preferences: "
+        f" Vegan: {vegan_diet}, Vegetarian: {vegetarian_diet},"
+        f" No Lactose: {no_lactose}, Diabetes: {Diabetes},"
+        f" Calories: {Calories}, Meal Type: {Meal_type},"
+        f" Preferences: {Preferences}."
+    )
 
     messages = [
         {"role": "system", "content": "You are someone who gives cooking instructions."},
-        {"role": "user", "content": f"Give me instructions for {selected_dish} that contain {ingredients}. Put *** between list of ingredients and recipe"},
+        {"role": "user", "content": user_message_2},
     ]
 
     response2 = openai.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=messages,
-        temperature=0.7,
+        temperature=0.3,
     )
 
     return {"generated_instruction": response2.choices[0].message.content}
+
+
+origins = [
+   "http://127.0.0.1:5500/",   # Replace with the port your Vue.js app is running on
+]
+
+app.add_middleware(
+   CORSMiddleware,
+   allow_origins=origins,
+   allow_credentials=True,
+   allow_methods=[""],
+   allow_headers=[""],
+)
